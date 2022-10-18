@@ -1,0 +1,46 @@
+pr:
+  branches:
+    include:
+      - 'feature/*'
+pool:
+  vmImage: 'ubuntu-latest'
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.7'
+    architecture: x64
+- task: DockerInstaller@0
+  inputs:
+    dockerVersion: '17.09.0-ce'
+- script: |
+    pip install mlflow
+  displayName: 'Installing dependencies'
+  enabled: 'true'
+  
+- script: |
+    echo "y
+    $(DATABRICKS_HOST_URL)
+    $(DATABRICKS_ACCESS_TOKEN)" | databricks configure --profile databricks --token 
+  displayName: 'Configuring Databricks cli profile'
+  enabled: 'true'
+- script: |
+    export MLFLOW_TRACKING_URI=databricks://databricks
+    mlflow models build-docker -m "runs:/$(MLFLOW_RUN_ID)/model" -n $(MODEL_NAME)  
+  displayName: 'Building a Mlflow docker image'
+  enabled: 'true'
+- script: |
+    docker tag $MODEL_NAME $(ACR_NAME).azurecr.io/mlflowtest/$(MODEL_NAME)
+  displayName: 'Tagging MLflow docker image'
+  enabled: 'true'
+- task: Docker@1
+  inputs:
+    containerregistrytype: 'Azure Container Registry'
+    azureSubscriptionEndpoint: 'field-eng(1)(3f2e4d32-8e8d-46d6-82bc-5bb8d962328b)'
+    azureContainerRegistry: '$(ACR_Name).azurecr.io'
+    command: 'push'
+    imageName: '$(ACR_NAME).azurecr.io/mlflowtest/$(MODEL_NAME)'
+    imageDigestFile: 'manifests'
+- task: PublishPipelineArtifact@1
+  inputs:
+    artifactName: 'manifests'
+    path: 'manifests'
